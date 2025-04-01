@@ -1,83 +1,118 @@
-from main import QoSMonitor
 import subprocess
 import re
 from datetime import datetime
-import threading
 import matplotlib.pyplot as plt
-import os
+import logging
+import coloredlogs
+import time
+import threading
+
+from latency import Latency
+from packet_loss import PacketLoss
+from throughput import Throughput
+
+
+coloredlogs.install(level="INFO")
 
 """
-Реализация многопоточности, функции для работы с tcpdump и постройки нужной визуализации
+Реализация многопоточности, функции для работы с tshark и постройки нужной визуализации
 """
 
 
 class Extra:
-    import matplotlib.pyplot as plt
+    def __init__(self, duration=60, host="10.0.0.2"):
+        self.duration = duration
+        self.retransmissions_timestamps = []
+        self.retransmissions_count = []
+        self.latency = Latency(duration=self.duration, host=host)
+        self.packet_loss = PacketLoss(duration=self.duration, host=host)
+        self.throughput = Throughput(duration=self.duration, host=host)
 
-    def capture_traffic(interface="eth0", duration=10, output_file="traffic.pcap"):
-        """
-        Capture network traffic using tcpdump.
-        """
-        try:
-            subprocess.run(
-                [
-                    "tcpdump",
-                    "-i",
-                    interface,
-                    "-w",
-                    output_file,
-                    "-G",
-                    str(duration),
-                    "-W",
-                    "1",
-                ],
-                check=True,
-            )
-            print(f"Traffic captured in {output_file}")
-        except subprocess.CalledProcessError as e:
-            print(f"Error capturing traffic: {e}")
+    def run(self, with_traffic_capture=False):
+        thread_latency = threading.Thread(target=self.latency.run)
+        thread_latency.start()
 
-    def analyze_retransmissions(pcap_file="traffic.pcap"):
-        """
-        Analyze the captured traffic for retransmissions.
-        """
-        try:
-            result = subprocess.run(
-                ["tcpdump", "-r", pcap_file, "-n", "-tt"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            retransmissions = []
-            for line in result.stdout.splitlines():
-                if "[R]" in line:
-                    timestamp = line.split()[0]
-                    retransmissions.append(datetime.fromtimestamp(float(timestamp)))
-            return retransmissions
-        except subprocess.CalledProcessError as e:
-            print(f"Error analyzing traffic: {e}")
-            return []
+        thread_packet_loss = threading.Thread(target=self.packet_loss.run)
+        thread_packet_loss.start()
 
-    def visualize_retransmissions(retransmissions):
-        """
-        Visualize retransmissions over time.
-        """
-        if not retransmissions:
-            print("No retransmissions to visualize.")
+        thread_throughput = threading.Thread(target=self.throughput.run)
+        thread_throughput.start()
+
+        if with_traffic_capture:
+            self.capture_traffic(duration=self.duration)
+
+        while (
+            thread_latency.is_alive()
+            or thread_packet_loss.is_alive()
+            or thread_throughput.is_alive()
+        ):
+            time.sleep(1)
+
+        return
+
+    def capture_traffic(self, duration=10):
+
+        command = [
+            "tshark",
+            "-a",
+            f"duration:{duration}",
+            "-Y",
+            "tcp.analysis.retransmission",
+            "-T",
+            "fields",
+            "-e",
+            "frame.time",
+        ]
+
+        process = subprocess.run(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+
+        if process.returncode != 0:
+            logging.error(f"Error capturing traffic: {process.stderr.decode()}")
             return
 
-        times = [t.strftime("%H:%M:%S") for t in retransmissions]
-        counts = {time: times.count(time) for time in set(times)}
+        output = process.stdout.decode()
 
+        self.analyze_retransmissions(output)
+        self.plot_retransmissions()
+
+        return
+
+    def analyze_retransmissions(self, output):
+        self.retransmissions_timestamps = []
+        self.retransmissions_count = []
+
+        for line in output.split("\n"):
+            timestamp = re.search(r"\d{2}:\d{2}:\d{2}\.\d{6}", line)
+            if timestamp:
+                self.retransmissions_count.append(
+                    datetime.strptime(timestamp.group(), "%H:%M:%S.%f")
+                )
+                self.retransmissions_timestamps.append(len(self.retransmissions_count))
+
+        return
+
+    def plot_retransmissions(self):
         plt.figure(figsize=(10, 6))
-        plt.bar(counts.keys(), counts.values(), color="blue")
+        plt.plot(
+            self.retransmissions_timestamps,
+            self.retransmissions_count,
+            marker="o",
+            label="Retransmissions",
+        )
         plt.xlabel("Time")
         plt.ylabel("Retransmissions")
-        plt.title("Retransmissions Over Time")
-        plt.xticks(rotation=45)
-        plt.tight_layout()
+        plt.title("TCP Retransmissions Over Time")
+        plt.legend()
+        plt.grid()
         plt.show()
+        plt.savefig("output/retransmissions_plot.png")
+        logging.info(f"Plot saved to output/retransmissions_plot.png")
+
+        return
 
 
 if __name__ == "__main__":
-    pass
+    extra = Extra(duration=60, host="10.0.0.2")
+    extra.run(with_traffic_capture=True)
