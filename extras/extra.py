@@ -101,8 +101,8 @@ class Extra:
             marker="o",
             label="Retransmissions",
         )
-        plt.xlabel("Time")
-        plt.ylabel("Retransmissions")
+        plt.ylabel("Time")
+        plt.xlabel("Retransmissions")
         plt.title("TCP Retransmissions Over Time")
         plt.legend()
         plt.grid()
