@@ -1,0 +1,29 @@
+[
+    {
+        "QoS Parameter": "Latency",
+        "Average": 40.17,
+        "Median": 40.1,
+        "95th Percentile": 40.4,
+        "Min": 40.1,
+        "Max": 40.5,
+        "Standard Deviation": 0.11
+    },
+    {
+        "QoS Parameter": "Packet Loss",
+        "Average": 3.03,
+        "Median": 0.0,
+        "95th Percentile": 25.0,
+        "Min": 0.0,
+        "Max": 25.0,
+        "Standard Deviation": 8.29
+    },
+    {
+        "QoS Parameter": "Throughput",
+        "Average": 7.34,
+        "Median": 8.79,
+        "95th Percentile": 8.98,
+        "Min": 2.26,
+        "Max": 8.98,
+        "Standard Deviation": 2.11
+    }
+]
